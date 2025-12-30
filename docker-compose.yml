@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8081:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
+  laravel:
+    build: ./services/backend-laravel
+    volumes:
+      - ./services/backend-laravel:/var/www
+    environment:
+      - DB_CONNECTION=pgsql
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_DATABASE=logistics_db
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=secret
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=logistics_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=secret
+
+  analytics:
+    build: ./services/analytics-go
+    labels:
+      - "traefik.http.routers.go.rule=PathPrefix(`/api/stats`)"
+      - "traefik.http.services.go.loadbalancer.server.port=8080"
+
+  frontend:
+    build: ./services/dashboard-vue
+    labels:
+      - "traefik.http.routers.vue.rule=PathPrefix(`/`)"
+      - "traefik.http.services.vue.loadbalancer.server.port=8080"
