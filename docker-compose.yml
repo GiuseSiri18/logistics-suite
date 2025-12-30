@@ -1,20 +1,25 @@
 version: '3.8'
 
 services:
+  # --- GATEWAY & REVERSE PROXY ---
   traefik:
     image: traefik:v2.10
+    container_name: logistics_gateway
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--entrypoints.web.address=:80"
     ports:
-      - "80:80"
-      - "8081:8080"
+      - "80:80"         # Accesso unico per tutti i servizi
+      - "8082:8080"     # Dashboard di Traefik
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    restart: always
 
+  # --- BACKEND CORE (LARAVEL) ---
   laravel:
     build: ./services/backend-laravel
+    container_name: backend_core
     volumes:
       - ./services/backend-laravel:/var/www
     environment:
@@ -24,22 +29,48 @@ services:
       - DB_DATABASE=logistics_db
       - DB_USERNAME=postgres
       - DB_PASSWORD=secret
+    labels:
+      - "traefik.http.middlewares.laravel-strip.stripprefix.prefixes=/core"
+      - "traefik.http.routers.laravel.middlewares=laravel-strip"
+      - "traefik.http.routers.laravel.rule=PathPrefix(`/api/core`)"
+      - "traefik.http.routers.laravel.priority=100"
+      - "traefik.http.services.laravel.loadbalancer.server.port=8000"
+    depends_on:
+      - db
 
+  # --- ANALYTICS SERVICE (GO) ---
+  analytics:
+    build: ./services/analytics-go
+    container_name: analytics_engine
+    labels:
+      - "traefik.http.routers.analytics.rule=PathPrefix(`/api/stats`)"
+      - "traefik.http.services.analytics.loadbalancer.server.port=8080"
+    restart: always
+
+  # --- FRONTEND (VUE + VUETIFY) ---
+  frontend:
+    build: ./services/dashboard-vue
+    container_name: dashboard_ui
+    volumes:
+      - ./services/dashboard-vue:/app
+      - /app/node_modules # Protegge i moduli installati nel container
+    labels:
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
+    restart: always
+
+  # --- DATABASE (POSTGRESQL) ---
   db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: postgres_db
     environment:
       - POSTGRES_DB=logistics_db
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
 
-  analytics:
-    build: ./services/analytics-go
-    labels:
-      - "traefik.http.routers.go.rule=PathPrefix(`/api/stats`)"
-      - "traefik.http.services.go.loadbalancer.server.port=8080"
-
-  frontend:
-    build: ./services/dashboard-vue
-    labels:
-      - "traefik.http.routers.vue.rule=PathPrefix(`/`)"
-      - "traefik.http.services.vue.loadbalancer.server.port=8080"
+volumes:
+  postgres_data:

@@ -6,8 +6,12 @@ import (
 )
 
 func main() {
-    http.HandleFunc("/api/analytics", func(w http.ResponseWriter, r *http.Request) {
-        data := map[string]string{"status": "Go service is analyzing logs...", "load": "normal"}
+    http.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
+        data := map[string]string{
+        "status": "running",
+        "service": "Go Analytics Engine",
+        "processing_time": "12ms",
+        }
         w.Header().Set("Content-Type", "application/json")
         json.NewEncoder(w).Encode(data)
     })
